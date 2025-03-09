@@ -16,7 +16,7 @@ GrammarHelper is a Chrome extension that uses ChatGPT to provide real-time gramm
 
 1. Clone this repository:
    ```
-   git clone https://github.com/YOUR_USERNAME/grammar-helper.git
+   git clone https://github.com/milestogoo/Free-grammerly.git
    ```
 
 2. Open Chrome and navigate to `chrome://extensions/`
