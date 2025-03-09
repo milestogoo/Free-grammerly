@@ -30,7 +30,8 @@
     }
     
     input[type="text"],
-    input[type="password"] {
+    input[type="password"],
+    input[type="number"] {
       width: 100%;
       padding: 8px;
       border: 1px solid #ddd;
@@ -147,33 +148,90 @@
       margin-bottom: 16px;
       color: #0d47a1;
     }
+    
+    .highlight {
+      background-color: #f3e5f5;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin: 12px 0;
+      border-left: 3px solid #9c27b0;
+    }
+    
+    .highlight h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #6a1b9a;
+    }
+    
+    .highlight p {
+      margin: 0;
+      font-size: 12px;
+    }
+    
+    .token-saver {
+      background-color: #f1f8e9;
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+    }
+    
+    .token-saver h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #33691e;
+    }
+    
+    .inline-field {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    
+    .inline-field label {
+      margin: 0;
+      margin-right: 8px;
+      min-width: 100px;
+    }
+    
+    .inline-field input {
+      flex: 1;
+    }
   </style>
 </head>
 <body>
   <h1>GrammarHelper Settings</h1>
   
-  <p class="note">API key is pre-configured. Auto-correction is enabled by default.</p>
+  <div class="highlight">
+    <h3>Quick Correction Mode</h3>
+    <p>Suggestions appear after 500ms pause in typing. Click "Insert" to apply corrections.</p>
+  </div>
   
   <div class="form-group">
     <label for="apiKey">ChatGPT API Key (Optional)</label>
     <input type="password" id="apiKey" placeholder="Using default API key">
   </div>
   
-  <div class="form-group">
+  <div class="token-saver">
+    <h3>Token Optimization Settings</h3>
     <div class="toggle-container">
       <label class="toggle">
-        <input type="checkbox" id="autoCorrect" checked>
+        <input type="checkbox" id="tokenSavingMode" checked>
         <span class="slider"></span>
       </label>
-      <label for="autoCorrect">Auto-correct as you type</label>
+      <label for="tokenSavingMode">Token saving mode</label>
     </div>
     
-    <div class="toggle-container">
-      <label class="toggle">
-        <input type="checkbox" id="highlightErrors" checked>
-        <span class="slider"></span>
-      </label>
-      <label for="highlightErrors">Highlight grammar errors</label>
+    <div class="inline-field">
+      <label for="minTextLength">Min text length:</label>
+      <input type="number" id="minTextLength" min="5" max="50" value="15">
+    </div>
+    <div class="inline-field">
+      <label for="maxTextLength">Max text length:</label>
+      <input type="number" id="maxTextLength" min="100" max="1000" value="500">
+    </div>
+    <div class="inline-field">
+      <label for="typingPauseDelay">Pause delay (ms):</label>
+      <input type="number" id="typingPauseDelay" min="200" max="2000" value="500">
     </div>
   </div>
   
@@ -182,7 +240,8 @@
   <div id="status" class="status"></div>
   
   <div class="footer">
-    <p>Suggestions appear after 2 second pause in typing</p>
+    <p>Suggestions appear after typing pause</p>
+    <p>Click "Insert" to apply corrections</p>
   </div>
   
   <script src="popup.js"></script>

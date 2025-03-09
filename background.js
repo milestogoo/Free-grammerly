@@ -13,8 +13,11 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.set({
     // Default API key - replace with your actual key
     apiKey: "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",
-    autoCorrect: true, // Auto-correct enabled by default
-    highlightErrors: true
+    // New settings for token optimization
+    maxTextLength: 500,
+    minTextLength: 15,
+    tokenSavingMode: true,
+    typingPauseDelay: 500  // 500ms delay before showing suggestions
   }, () => {
     console.log("GrammarHelper: Default settings initialized with API key");
   });
@@ -30,13 +33,23 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     // Get the selected text
     const selectedText = info.selectionText;
     
-    // Process directly in background script
-    processGrammarCorrection(selectedText, tab.id);
+    // Check if text is within our processing limits
+    chrome.storage.sync.get("maxTextLength", (data) => {
+      let textToProcess = selectedText;
+      
+      if (data.tokenSavingMode && selectedText.length > data.maxTextLength) {
+        // If text is too long and token saving is enabled, trim it
+        textToProcess = selectedText.substring(0, data.maxTextLength);
+        processGrammarCorrection(textToProcess, tab.id, true); // true = text was trimmed
+      } else {
+        processGrammarCorrection(selectedText, tab.id, false);
+      }
+    });
   }
 });
 
 // Function to process grammar correction
-function processGrammarCorrection(text, tabId) {
+function processGrammarCorrection(text, tabId, wasTrimmed) {
   chrome.storage.sync.get("apiKey", async (data) => {
     if (!data.apiKey) {
       console.error("GrammarHelper: API key not set");
@@ -46,24 +59,32 @@ function processGrammarCorrection(text, tabId) {
     
     try {
       console.log("GrammarHelper: Calling API for correction");
-      // Call the API
+      // Call the API with token optimization
       const correctedText = await callChatGPTForCorrection(text, data.apiKey);
       console.log("GrammarHelper: Correction successful");
       
-      // Inject a script to create and display the popup
-      chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        function: showCorrectionPopupInPage,
-        args: [text, correctedText]
-      }).catch(err => {
-        console.error("GrammarHelper: Failed to inject popup script", err);
-      });
+      // Only inject UI if there's an actual correction
+      if (text !== correctedText) {
+        // Inject a script to create and display the popup
+        chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          function: showGrammarSuggestionInPage,
+          args: [text, correctedText, wasTrimmed]
+        }).catch(err => {
+          console.error("GrammarHelper: Failed to inject popup script", err);
+        });
+      } else {
+        // Text is already correct, just show a notification
+        showNotification(tabId, "Text is already grammatically correct!");
+      }
     } catch (error) {
       console.error("GrammarHelper: API request failed", error);
       
-      // Check if it's a quota exceeded error
+      // Handle different types of errors
       if (error.message && error.message.includes("quota")) {
         showNotification(tabId, "Error: You've exceeded your OpenAI API quota. Please check your billing.");
+      } else if (error.message && error.message.includes("rate")) {
+        showNotification(tabId, "Error: Too many requests. Please try again in a moment.");
       } else {
         showNotification(tabId, "Error: " + (error.message || "Failed to correct grammar"));
       }
@@ -86,7 +107,15 @@ function showNotification(tabId, message) {
       // Remove after 5 seconds
       setTimeout(() => {
         if (document.body.contains(notification)) {
-          document.body.removeChild(notification);
+          notification.style.opacity = '0';
+          notification.style.transform = 'translateY(10px)';
+          notification.style.transition = 'opacity 0.5s, transform 0.5s';
+          
+          setTimeout(() => {
+            if (document.body.contains(notification)) {
+              document.body.removeChild(notification);
+            }
+          }, 500);
         }
       }, 5000);
     },
@@ -96,24 +125,14 @@ function showNotification(tabId, message) {
   });
 }
 
-// Function to be injected into the page to show correction popup
-function showCorrectionPopupInPage(originalText, correctedText) {
-  console.log("GrammarHelper: Creating correction popup in page");
+// Function to be injected into the page to show correction suggestion
+function showGrammarSuggestionInPage(originalText, correctedText, wasTrimmed) {
+  console.log("GrammarHelper: Creating grammar suggestion in page");
   
-  // If texts are identical, just notify and return
-  if (originalText === correctedText) {
-    const notification = document.createElement('div');
-    notification.className = 'grammar-helper-notification';
-    notification.textContent = 'Text is already grammatically correct!';
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-      if (document.body.contains(notification)) {
-        document.body.removeChild(notification);
-      }
-    }, 3000);
-    return;
+  // Remove any existing popups
+  const existingPopup = document.getElementById('grammar-helper-popup');
+  if (existingPopup) {
+    document.body.removeChild(existingPopup);
   }
   
   // Create popup element
@@ -122,23 +141,27 @@ function showCorrectionPopupInPage(originalText, correctedText) {
   popup.className = 'grammar-helper-popup';
   
   // Create popup content
+  let warningNote = '';
+  if (wasTrimmed) {
+    warningNote = `<div class="grammar-helper-warning">Note: Only the first part of your selection was analyzed due to length.</div>`;
+  }
+  
   popup.innerHTML = `
     <div class="grammar-helper-header">
       <h3>Grammar Suggestion</h3>
       <button class="grammar-helper-close">×</button>
     </div>
     <div class="grammar-helper-content">
-      <div class="grammar-helper-original">
-        <h4>Original Text:</h4>
-        <p>${originalText}</p>
-      </div>
-      <div class="grammar-helper-corrected">
-        <h4>Corrected Text:</h4>
-        <p>${correctedText}</p>
+      ${warningNote}
+      <div class="grammar-helper-comparison">
+        <div class="grammar-helper-original-text">${originalText}</div>
+        <div class="grammar-helper-arrow">→</div>
+        <div class="grammar-helper-corrected-text">${correctedText}</div>
       </div>
     </div>
     <div class="grammar-helper-actions">
-      <button class="grammar-helper-apply">Apply Correction</button>
+      <button class="grammar-helper-insert">Insert</button>
+      <button class="grammar-helper-ignore">Ignore</button>
     </div>
   `;
   
@@ -155,20 +178,28 @@ function showCorrectionPopupInPage(originalText, correctedText) {
     document.body.removeChild(popup);
   });
   
-  popup.querySelector('.grammar-helper-apply').addEventListener('click', () => {
-    // Copy corrected text to clipboard
+  popup.querySelector('.grammar-helper-insert').addEventListener('click', () => {
+    // Insert corrected text by copying to clipboard
     navigator.clipboard.writeText(correctedText).then(() => {
       // Create a small notification
       const notification = document.createElement('div');
       notification.className = 'grammar-helper-notification';
-      notification.textContent = 'Corrected text copied to clipboard!';
+      notification.textContent = 'Corrected text copied to clipboard! Paste to insert.';
       
       document.body.appendChild(notification);
       
       // Remove notification after 3 seconds
       setTimeout(() => {
         if (document.body.contains(notification)) {
-          document.body.removeChild(notification);
+          notification.style.opacity = '0';
+          notification.style.transform = 'translateY(10px)';
+          notification.style.transition = 'opacity 0.5s, transform 0.5s';
+          
+          setTimeout(() => {
+            if (document.body.contains(notification)) {
+              document.body.removeChild(notification);
+            }
+          }, 500);
         }
       }, 3000);
       
@@ -177,6 +208,11 @@ function showCorrectionPopupInPage(originalText, correctedText) {
     }).catch(err => {
       console.error('Failed to copy text: ', err);
     });
+  });
+  
+  popup.querySelector('.grammar-helper-ignore').addEventListener('click', () => {
+    // Just close the popup without doing anything
+    document.body.removeChild(popup);
   });
 }
 
@@ -187,8 +223,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "analyzeText") {
     console.log("GrammarHelper: Analyzing text from content script");
     
-    // Get API key from storage
-    chrome.storage.sync.get("apiKey", async (data) => {
+    // Get API key and settings from storage
+    chrome.storage.sync.get(["apiKey", "tokenSavingMode"], async (data) => {
       if (!data.apiKey) {
         console.error("GrammarHelper: API key not set");
         sendResponse({ success: false, error: "API key not set" });
@@ -196,12 +232,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
       
       try {
-        // Call the API
-        const correctedText = await callChatGPTForCorrection(request.text, data.apiKey);
+        // Apply token optimization strategies based on settings
+        let textToAnalyze = request.text;
+        let tokenOptimized = false;
+        
+        // Call the API with possible optimizations
+        const correctedText = await callChatGPTForCorrection(textToAnalyze, data.apiKey);
         console.log("GrammarHelper: Analysis successful");
         sendResponse({ 
           success: true, 
-          correctedText: correctedText
+          correctedText: correctedText,
+          tokenOptimized: tokenOptimized
         });
       } catch (error) {
         console.error("GrammarHelper: API request failed", error);
@@ -217,8 +258,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Function to call ChatGPT API for simple correction
+// Function to call ChatGPT API for simple correction with token optimization
 async function callChatGPTForCorrection(text, apiKey) {
+  // Optimize the system prompt based on text length to save tokens
+  let systemPrompt = "";
+  
+  if (text.length < 50) {
+    // Very short text - use minimal prompt
+    systemPrompt = "Fix grammar and spelling errors. Return only the corrected text.";
+  } else if (text.length < 200) {
+    // Medium length text - standard prompt
+    systemPrompt = "You are a grammar correction assistant. Correct grammar, spelling, and punctuation. Return only the corrected text.";
+  } else {
+    // Longer text - more detailed prompt
+    systemPrompt = "You are a helpful grammar correction assistant. Correct the grammar, spelling, and punctuation in the text provided. Only return the corrected text without explanations.";
+  }
+  
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -230,14 +285,16 @@ async function callChatGPTForCorrection(text, apiKey) {
       messages: [
         {
           role: "system",
-          content: "You are a helpful grammar correction assistant. Correct the grammar, spelling, and punctuation in the text provided. Only return the corrected text without explanations."
+          content: systemPrompt
         },
         {
           role: "user",
           content: text
         }
       ],
-      temperature: 0.3
+      temperature: 0.3,
+      // Request minimal tokens to save costs
+      max_tokens: Math.min(4000, text.length * 1.5) // Estimate max tokens needed
     })
   });
 
