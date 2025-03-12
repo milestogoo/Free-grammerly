@@ -12,7 +12,7 @@ chrome.runtime.onInstalled.addListener(() => {
   // Initialize settings with default values including API key and auto-correct enabled
   chrome.storage.sync.set({
     // Default API key - replace with your actual key
-    apiKey: "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",
+    apiKey: "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",
     // New settings for token optimization
     maxTextLength: 500,
     minTextLength: 15,
